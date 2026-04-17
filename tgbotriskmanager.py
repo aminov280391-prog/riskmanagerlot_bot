@@ -14,7 +14,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 if not TOKEN:
     raise ValueError("TELEGRAM_TOKEN not set")
-ADMIN_ID = 543784246   # ЗАМЕНИТЕ НА СВОЙ ID (узнайте у @userinfobot)
+ADMIN_ID = 543782446   # ЗАМЕНИТЕ НА СВОЙ ID (узнайте у @userinfobot)
 
 # ========== ПЕРЕВОДЫ ==========
 LANGUAGES = {
