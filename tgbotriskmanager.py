@@ -1,4 +1,3 @@
-from aiohttp import web
 import os
 import asyncio
 import logging
@@ -12,11 +11,10 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
 # ========== КОНФИГУРАЦИЯ ==========
-TOKEN = os.getenv("TELEGRAM_TOKEN")   # Токен берётся из переменной окружения
+TOKEN = os.getenv("TELEGRAM_TOKEN")
 if not TOKEN:
-    raise ValueError("Переменная окружения TELEGRAM_TOKEN не установлена!")
-
-ADMIN_ID = 543784246   # Замени на свой ID (можно оставить как есть, если это твой)
+    raise ValueError("TELEGRAM_TOKEN not set")
+ADMIN_ID = 543784246   # замените на свой ID
 
 # ========== ПЕРЕВОДЫ ==========
 LANGUAGES = {
@@ -29,16 +27,17 @@ LANGUAGES = {
 
 LOC = {
     "btn_calc": {"en": "🎯 Calculate Lot", "ru": "🎯 Рассчитать лот", "uz": "🎯 Lotni hisoblash", "zh": "🎯 计算手数", "tr": "🎯 Lot Hesapla"},
+    "btn_reset": {"en": "🔄 Reset", "ru": "🔄 Сброс", "uz": "🔄 Bekor qilish", "zh": "🔄 重置", "tr": "🔄 Sıfırla"},
     "btn_contact": {"en": "📞 Contact Admin", "ru": "📞 Связаться с админом", "uz": "📞 Admin bilan bog‘lanish", "zh": "📞 联系管理员", "tr": "📞 Admin ile iletişim"},
     "btn_instruments": {"en": "📋 Instruments", "ru": "📋 Инструменты", "uz": "📋 Vositalar", "zh": "📋 交易品种", "tr": "📋 Enstrümanlar"},
     "btn_language": {"en": "🌐 Language", "ru": "🌐 Язык", "uz": "🌐 Til", "zh": "🌐 语言", "tr": "🌐 Dil"},
     "btn_history": {"en": "📜 History", "ru": "📜 История", "uz": "📜 Tarix", "zh": "📜 历史记录", "tr": "📜 Geçmiş"},
     "welcome": {
-        "en": "📊 *Lot Calculator*\n\nPress '{}' to begin.\nContact admin: '{}'\nHistory: '{}'",
-        "ru": "📊 *Калькулятор лота*\n\nНажмите «{}» для начала.\nСвязаться с админом: «{}»\nИстория: «{}»",
-        "uz": "📊 *Lot kalkulyatori*\n\nBoshlash: '{}'\nAdmin: '{}'\nTarix: '{}'",
-        "zh": "📊 *手数计算器*\n\n按“{}”开始。\n联系管理员：“{}”\n历史记录：“{}”",
-        "tr": "📊 *Lot Hesaplayıcı*\n\nBaşlamak: '{}'\nAdmin: '{}'\nGeçmiş: '{}'"
+        "en": "📊 *Lot Calculator*\n\nPress '{}' to begin.\nReset: '{}'\nContact admin: '{}'\nHistory: '{}'",
+        "ru": "📊 *Калькулятор лота*\n\nНажмите «{}» для начала.\nСброс: «{}»\nСвязаться с админом: «{}»\nИстория: «{}»",
+        "uz": "📊 *Lot kalkulyatori*\n\nBoshlash: '{}'\nBekor qilish: '{}'\nAdmin: '{}'\nTarix: '{}'",
+        "zh": "📊 *手数计算器*\n\n按“{}”开始。\n重置：“{}”\n联系管理员：“{}”\n历史记录：“{}”",
+        "tr": "📊 *Lot Hesaplayıcı*\n\nBaşlamak: '{}'\nSıfırlama: '{}'\nAdmin: '{}'\nGeçmiş: '{}'"
     },
     "instruments_list": {
         "en": "📋 *Available instruments:*\n```\n{}\n```",
@@ -71,19 +70,30 @@ LOC = {
         "zh": "✅ *推荐手数:* `{lot:.2f}`\n\n💰 *入金:* {deposit} USD\n📈 *入场价:* {open_price}\n🛑 *止损价:* {sl_price}\n💸 *风险:* {risk_text}\n📏 *止损距离:* {points} 点",
         "tr": "✅ *Önerilen lot:* `{lot:.2f}`\n\n💰 *Depozito:* {deposit} USD\n📈 *Giriş fiyatı:* {open_price}\n🛑 *Stop Loss:* {sl_price}\n💸 *Risk:* {risk_text}\n📏 *Stop mesafesi:* {points} pip"
     },
-    "error_general": {
-        "en": "⚠️ Error: {error}\nStart over with /calc", "ru": "⚠️ Ошибка: {error}\nНачните заново /calc",
-        "uz": "⚠️ Xato: {error}\n/calc bilan qaytadan", "zh": "⚠️ 错误: {error}\n使用 /calc 重新开始", "tr": "⚠️ Hata: {error}\n/calc ile yeniden başlayın"
+    "cancel": {
+        "en": "❌ Cancelled. Press '{}' to start again.",
+        "ru": "❌ Отменено. Нажмите «{}».",
+        "uz": "❌ Bekor qilindi. '{}' bosing.",
+        "zh": "❌ 已取消。按“{}”重新开始。",
+        "tr": "❌ İptal edildi. Yeniden başlamak için '{}'."
+    },
+    "reset_button_text": {"en": "🔄 Reset", "ru": "🔄 Сброс", "uz": "🔄 Bekor qilish", "zh": "🔄 重置", "tr": "🔄 Sıfırla"},
+    "contact_request": {
+        "en": "✍️ Please type your message to admin (text only, your ID will not be shown):",
+        "ru": "✍️ Напишите ваше сообщение администратору (только текст, ваш ID не будет показан):",
+        "uz": "✍️ Admonga xabaringizni yozing (faqat matn, ID-ingiz ko‘rsatilmaydi):",
+        "zh": "✍️ 请输入您给管理员的消息（仅文本，您的ID不会显示）:",
+        "tr": "✍️ Yöneticiye mesajınızı yazın (sadece metin, ID'niz gösterilmeyecek):"
     },
     "contact_admin_ok": {"en": "✅ Your message has been sent to admin.", "ru": "✅ Ваше сообщение отправлено администратору.", "uz": "✅ Xabaringiz adminga yuborildi.", "zh": "✅ 您的消息已发送给管理员。", "tr": "✅ Mesajınız yöneticiye gönderildi."},
-    "contact_no_admin": {"en": "📧 Admin contact not set.", "ru": "📧 Контакт администратора не задан.", "uz": "📧 Admin kontakti o‘rnatilmagan.", "zh": "📧 管理员联系方式未设置。", "tr": "📧 Yönetici iletişimi ayarlanmamış."},
     "contact_invalid": {
-        "en": "❌ Please send a text message (not a photo, sticker, etc.).",
-        "ru": "❌ Пожалуйста, отправьте текстовое сообщение (не фото, стикер и т.д.).",
-        "uz": "❌ Iltimos, matnli xabar yuboring (rasm, stiker emas).",
-        "zh": "❌ 请发送文本消息（不是照片、贴纸等）。",
-        "tr": "❌ Lütfen metin mesajı gönderin (fotoğraf, çıkartma değil)."
+        "en": "❌ Please send a text message.",
+        "ru": "❌ Пожалуйста, отправьте текстовое сообщение.",
+        "uz": "❌ Iltimos, matnli xabar yuboring.",
+        "zh": "❌ 请发送文本消息。",
+        "tr": "❌ Lütfen metin mesajı gönderin."
     },
+    "contact_no_admin": {"en": "📧 Admin contact not set.", "ru": "📧 Контакт администратора не задан.", "uz": "📧 Admin kontakti o‘rnatilmagan.", "zh": "📧 管理员联系方式未设置。", "tr": "📧 Yönetici iletişimi ayarlanmamış."},
     "language_selected": {"en": "✅ Language changed.", "ru": "✅ Язык изменён.", "uz": "✅ Til o‘zgartirildi.", "zh": "✅ 语言已更改。", "tr": "✅ Dil değiştirildi."},
     "choose_language": {"en": "🌐 *Choose language:*", "ru": "🌐 *Выберите язык:*", "uz": "🌐 *Tilni tanlang:*", "zh": "🌐 *选择语言:*", "tr": "🌐 *Dil seçin:*"},
     "history_empty": {
@@ -107,19 +117,12 @@ LOC = {
         "zh": "🕒 {time}\n品种: {instr}\n入金: {deposit} USD\n手数: {lot:.2f}\n风险: {risk_text}",
         "tr": "🕒 {time}\nEnstrüman: {instr}\nDepozito: {deposit} USD\nLot: {lot:.2f}\nRisk: {risk_text}"
     },
-    "contact_request": {
-        "en": "✍️ Please type your message to admin (text only, your ID will not be shown):",
-        "ru": "✍️ Напишите ваше сообщение администратору (только текст, ваш ID не будет показан):",
-        "uz": "✍️ Admonga xabaringizni yozing (faqat matn, ID-ingiz ko‘rsatilmaydi):",
-        "zh": "✍️ 请输入您给管理员的消息（仅文本，您的ID不会显示）:",
-        "tr": "✍️ Yöneticiye mesajınızı yazın (sadece metin, ID'niz gösterilmeyecek):"
-    },
-    "cancel": {
-        "en": "❌ Cancelled. Press '{}' to start again.",
-        "ru": "❌ Отменено. Нажмите «{}».",
-        "uz": "❌ Bekor qilindi. '{}' bosing.",
-        "zh": "❌ 已取消。按“{}”重新开始。",
-        "tr": "❌ İptal edildi. Yeniden başlamak için '{}'."
+    "error_general": {
+        "en": "⚠️ Error: {error}\nStart over with /calc",
+        "ru": "⚠️ Ошибка: {error}\nНачните заново /calc",
+        "uz": "⚠️ Xato: {error}\n/calc bilan qaytadan",
+        "zh": "⚠️ 错误: {error}\n使用 /calc 重新开始",
+        "tr": "⚠️ Hata: {error}\n/calc ile yeniden başlayın"
     },
     "admin_reply_instruction": {
         "en": "To reply, use: `/reply {} your message`",
@@ -151,7 +154,7 @@ LOC = {
     }
 }
 
-# ========== СПИСОК ИНСТРУМЕНТОВ (30+) ==========
+# ========== ИНСТРУМЕНТЫ ==========
 INSTRUMENTS = [
     "XAUUSD", "XAGUSD", "XPTUSD", "XPDUSD", "USOIL", "UKOIL",
     "BTCUSD", "ETHUSD", "LTCUSD", "XRPUSD", "ADAUSD", "DOTUSD",
@@ -267,8 +270,9 @@ def main_keyboard(user_id):
     return types.ReplyKeyboardMarkup(
         keyboard=[
             [types.KeyboardButton(text=LOC["btn_calc"][lang])],
-            [types.KeyboardButton(text=LOC["btn_history"][lang]), types.KeyboardButton(text=LOC["btn_contact"][lang])],
-            [types.KeyboardButton(text=LOC["btn_instruments"][lang]), types.KeyboardButton(text=LOC["btn_language"][lang])]
+            [types.KeyboardButton(text=LOC["btn_reset"][lang]), types.KeyboardButton(text=LOC["btn_history"][lang])],
+            [types.KeyboardButton(text=LOC["btn_instruments"][lang]), types.KeyboardButton(text=LOC["btn_contact"][lang])],
+            [types.KeyboardButton(text=LOC["btn_language"][lang])]
         ], resize_keyboard=True
     )
 
@@ -284,6 +288,132 @@ def risk_type_keyboard(user_id):
             [types.KeyboardButton(text=LOC["risk_fixed"][lang])]
         ], resize_keyboard=True
     )
+
+# ========== КОМАНДЫ ==========
+@dp.message(Command("start"))
+async def cmd_start(message: types.Message):
+    u = message.from_user.id
+    btn_calc = get_text(u, "btn_calc")
+    btn_reset = get_text(u, "btn_reset")
+    btn_contact = get_text(u, "btn_contact")
+    btn_history = get_text(u, "btn_history")
+    await message.answer(
+        get_text(u, "welcome", btn_calc, btn_reset, btn_contact, btn_history),
+        parse_mode="Markdown", reply_markup=main_keyboard(u)
+    )
+
+@dp.message(Command("cancel"))
+async def cmd_cancel(message: types.Message, state: FSMContext):
+    u = message.from_user.id
+    await state.clear()
+    btn_calc = get_text(u, "btn_calc")
+    await message.answer(get_text(u, "cancel", btn_calc), reply_markup=main_keyboard(u))
+
+@dp.message(Command("instruments"))
+async def cmd_instruments(message: types.Message):
+    u = message.from_user.id
+    await message.answer(
+        get_text(u, "instruments_list", "\n".join(INSTRUMENTS)),
+        parse_mode="Markdown", reply_markup=main_keyboard(u)
+    )
+
+@dp.message(Command("language"))
+async def cmd_language(message: types.Message):
+    u = message.from_user.id
+    kb = types.ReplyKeyboardMarkup(
+        keyboard=[[types.KeyboardButton(text=name)] for name in LANGUAGES.values()],
+        resize_keyboard=True, one_time_keyboard=True
+    )
+    await message.answer(get_text(u, "choose_language"), parse_mode="Markdown", reply_markup=kb)
+
+@dp.message(lambda msg: msg.text in LANGUAGES.values())
+async def set_language(message: types.Message):
+    u = message.from_user.id
+    for code, name in LANGUAGES.items():
+        if name == message.text:
+            user_langs[u] = code
+            await message.answer(get_text(u, "language_selected"), reply_markup=main_keyboard(u))
+            return
+
+@dp.message(Command("calc"))
+async def cmd_calc(message: types.Message, state: FSMContext):
+    u = message.from_user.id
+    await state.clear()   # принудительный сброс перед новым расчётом
+    await state.set_state(CalcForm.waiting_for_instrument)
+    await message.answer(
+        get_text(u, "select_instrument"),
+        parse_mode="Markdown", reply_markup=instrument_keyboard()
+    )
+
+@dp.message(F.text.in_([LOC["btn_calc"][lang] for lang in LANGUAGES]))
+async def handle_calc_button(message: types.Message, state: FSMContext):
+    await cmd_calc(message, state)
+
+@dp.message(F.text.in_([LOC["btn_reset"][lang] for lang in LANGUAGES]))
+async def handle_reset_button(message: types.Message, state: FSMContext):
+    await cmd_cancel(message, state)
+
+@dp.message(F.text.in_([LOC["btn_history"][lang] for lang in LANGUAGES]))
+async def show_history(message: types.Message):
+    u = message.from_user.id
+    history = user_history.get(u, [])
+    if not history:
+        btn_calc = get_text(u, "btn_calc")
+        await message.answer(get_text(u, "history_empty", btn_calc), reply_markup=main_keyboard(u))
+        return
+    text = get_text(u, "history_title")
+    for rec in history[:5]:
+        text += get_text(u, "history_entry",
+                         time=rec["time"], instr=rec["instrument"],
+                         deposit=rec["deposit"], lot=rec["lot"],
+                         risk_text=rec["risk_text"]) + "\n\n"
+    await message.answer(text, parse_mode="Markdown", reply_markup=main_keyboard(u))
+
+@dp.message(F.text.in_([LOC["btn_instruments"][lang] for lang in LANGUAGES]))
+async def handle_instruments_button(message: types.Message):
+    await cmd_instruments(message)
+
+@dp.message(F.text.in_([LOC["btn_language"][lang] for lang in LANGUAGES]))
+async def handle_language_button(message: types.Message):
+    await cmd_language(message)
+
+# ========== КНОПКА СВЯЗИ С АДМИНОМ ==========
+@dp.message(F.text.in_([LOC["btn_contact"][lang] for lang in LANGUAGES]))
+async def contact_admin_start(message: types.Message, state: FSMContext):
+    u = message.from_user.id
+    await state.set_state(ContactForm.waiting_for_message)
+    await message.answer(get_text(u, "contact_request"), reply_markup=types.ReplyKeyboardRemove())
+
+@dp.message(ContactForm.waiting_for_message)
+async def contact_admin_send(message: types.Message, state: FSMContext):
+    u = message.from_user.id
+    if not message.text or not message.text.strip():
+        await message.answer(get_text(u, "contact_invalid"), reply_markup=main_keyboard(u))
+        await state.clear()
+        return
+    user_text = message.text.strip()
+    if ADMIN_ID:
+        code = generate_code()
+        reply_codes[code] = u
+        admin_msg = (
+            f"📩 *New anonymous message*\n"
+            f"🔑 *Code:* `{code}`\n\n"
+            f"{user_text}\n\n"
+            f"To reply, use: `/reply {code} your message`"
+        )
+        try:
+            await bot.send_message(ADMIN_ID, admin_msg, parse_mode="Markdown")
+            await message.answer(get_text(u, "contact_admin_ok"), reply_markup=main_keyboard(u))
+        except Exception as e:
+            # Если бот не может отправить админу (админ не начал диалог)
+            await message.answer(
+                "❌ Could not reach admin. Make sure the admin has started the bot first.\n"
+                "❌ Администратор ещё не запустил бота. Напишите ему напрямую.",
+                reply_markup=main_keyboard(u)
+            )
+    else:
+        await message.answer(get_text(u, "contact_no_admin"), reply_markup=main_keyboard(u))
+    await state.clear()
 
 # ========== КОМАНДЫ АДМИНА ==========
 @dp.message(Command("list_codes"))
@@ -321,121 +451,7 @@ async def admin_reply(message: types.Message):
     except Exception as e:
         await message.answer(get_text(ADMIN_ID, "reply_error", str(e)))
 
-# ========== ОСНОВНЫЕ КОМАНДЫ ==========
-@dp.message(Command("start"))
-async def cmd_start(message: types.Message):
-    u = message.from_user.id
-    btn_calc = get_text(u, "btn_calc")
-    btn_contact = get_text(u, "btn_contact")
-    btn_history = get_text(u, "btn_history")
-    await message.answer(
-        get_text(u, "welcome", btn_calc, btn_contact, btn_history),
-        parse_mode="Markdown", reply_markup=main_keyboard(u)
-    )
-
-@dp.message(Command("instruments"))
-async def cmd_instruments(message: types.Message):
-    u = message.from_user.id
-    await message.answer(
-        get_text(u, "instruments_list", "\n".join(INSTRUMENTS)),
-        parse_mode="Markdown", reply_markup=main_keyboard(u)
-    )
-
-@dp.message(Command("cancel"))
-async def cmd_cancel(message: types.Message, state: FSMContext):
-    u = message.from_user.id
-    await state.clear()
-    btn_calc = get_text(u, "btn_calc")
-    await message.answer(get_text(u, "cancel", btn_calc), reply_markup=main_keyboard(u))
-
-@dp.message(Command("language"))
-async def cmd_language(message: types.Message):
-    u = message.from_user.id
-    kb = types.ReplyKeyboardMarkup(
-        keyboard=[[types.KeyboardButton(text=name)] for name in LANGUAGES.values()],
-        resize_keyboard=True, one_time_keyboard=True
-    )
-    await message.answer(get_text(u, "choose_language"), parse_mode="Markdown", reply_markup=kb)
-
-@dp.message(lambda msg: msg.text in LANGUAGES.values())
-async def set_language(message: types.Message):
-    u = message.from_user.id
-    for code, name in LANGUAGES.items():
-        if name == message.text:
-            user_langs[u] = code
-            await message.answer(get_text(u, "language_selected"), reply_markup=main_keyboard(u))
-            return
-
-@dp.message(Command("calc"))
-async def cmd_calc(message: types.Message, state: FSMContext):
-    u = message.from_user.id
-    await state.set_state(CalcForm.waiting_for_instrument)
-    await message.answer(
-        get_text(u, "select_instrument"),
-        parse_mode="Markdown",
-        reply_markup=instrument_keyboard()
-    )
-
-@dp.message(F.text.in_([LOC["btn_history"][lang] for lang in LANGUAGES]))
-async def show_history(message: types.Message):
-    u = message.from_user.id
-    history = user_history.get(u, [])
-    if not history:
-        btn_calc = get_text(u, "btn_calc")
-        await message.answer(get_text(u, "history_empty", btn_calc), reply_markup=main_keyboard(u))
-        return
-    text = get_text(u, "history_title")
-    for rec in history[:5]:
-        text += get_text(u, "history_entry",
-                         time=rec["time"], instr=rec["instrument"],
-                         deposit=rec["deposit"], lot=rec["lot"],
-                         risk_text=rec["risk_text"]) + "\n\n"
-    await message.answer(text, parse_mode="Markdown", reply_markup=main_keyboard(u))
-
-# ========== АНОНИМНЫЕ СООБЩЕНИЯ ==========
-@dp.message(F.text.in_([LOC["btn_contact"][lang] for lang in LANGUAGES]))
-async def contact_admin_start(message: types.Message, state: FSMContext):
-    u = message.from_user.id
-    await state.set_state(ContactForm.waiting_for_message)
-    await message.answer(get_text(u, "contact_request"), reply_markup=types.ReplyKeyboardRemove())
-
-@dp.message(ContactForm.waiting_for_message)
-async def contact_admin_send(message: types.Message, state: FSMContext):
-    u = message.from_user.id
-    if not message.text or message.text.strip() == "":
-        await message.answer(get_text(u, "contact_invalid"), reply_markup=main_keyboard(u))
-        await state.clear()
-        return
-    user_text = message.text.strip()
-    if ADMIN_ID:
-        code = generate_code()
-        reply_codes[code] = u
-        admin_msg = (
-            f"📩 *New anonymous message*\n"
-            f"🔑 *Code:* `{code}`\n\n"
-            f"{user_text}\n\n"
-            f"To reply, use: `/reply {code} your message`"
-        )
-        await bot.send_message(ADMIN_ID, admin_msg, parse_mode="Markdown")
-        await message.answer(get_text(u, "contact_admin_ok"), reply_markup=main_keyboard(u))
-    else:
-        await message.answer(get_text(u, "contact_no_admin"), reply_markup=main_keyboard(u))
-    await state.clear()
-
-# ========== КНОПКИ ==========
-@dp.message(F.text.in_([LOC["btn_calc"][lang] for lang in LANGUAGES]))
-async def handle_calc_button(message: types.Message, state: FSMContext):
-    await cmd_calc(message, state)
-
-@dp.message(F.text.in_([LOC["btn_instruments"][lang] for lang in LANGUAGES]))
-async def handle_instruments_button(message: types.Message):
-    await cmd_instruments(message)
-
-@dp.message(F.text.in_([LOC["btn_language"][lang] for lang in LANGUAGES]))
-async def handle_language_button(message: types.Message):
-    await cmd_language(message)
-
-# ========== FSM КАЛЬКУЛЯТОРА ==========
+# ========== FSM ШАГИ ==========
 @dp.message(CalcForm.waiting_for_instrument)
 async def process_instrument(message: types.Message, state: FSMContext):
     u = message.from_user.id
@@ -544,20 +560,13 @@ async def process_risk_value(message: types.Message, state: FSMContext):
                 "risk_text": result["risk_text"]
             })
         await state.clear()
-    except Exception:
+    except Exception as e:
         await message.answer(get_text(u, "error_positive"), reply_markup=main_keyboard(u))
+        await state.clear()
 
-async def set_bot_commands():
-    commands = [
-        types.BotCommand(command="start", description="🏠 Main menu"),
-        types.BotCommand(command="calc", description="🧮 Calculate lot"),
-        types.BotCommand(command="language", description="🌐 Change language"),
-        types.BotCommand(command="instruments", description="📋 List of instruments"),
-        types.BotCommand(command="cancel", description="❌ Cancel current operation"),
-    ]
-    await bot.set_my_commands(commands)
-
+# ========== HEALTH CHECK ==========
 async def health_check():
+    from aiohttp import web
     app = web.Application()
     async def handle(request):
         return web.Response(text="OK")
@@ -567,13 +576,21 @@ async def health_check():
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', int(os.environ.get('PORT', 8080)))
     await site.start()
-    # Бесконечно держим сервер включенным
     while True:
         await asyncio.sleep(3600)
 
+async def set_bot_commands():
+    commands = [
+        types.BotCommand(command="start", description="🏠 Main menu"),
+        types.BotCommand(command="calc", description="🧮 Calculate lot"),
+        types.BotCommand(command="cancel", description="❌ Cancel current operation"),
+        types.BotCommand(command="language", description="🌐 Change language"),
+        types.BotCommand(command="instruments", description="📋 List of instruments"),
+    ]
+    await bot.set_my_commands(commands)
+
 async def main():
     await set_bot_commands()
-    # Запускаем одновременно бота (long polling) и health check сервер
     await asyncio.gather(
         dp.start_polling(bot),
         health_check()
