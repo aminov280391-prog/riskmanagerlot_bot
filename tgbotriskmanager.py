@@ -561,13 +561,20 @@ async def health_check():
     from aiohttp import web
     app = web.Application()
     async def handle(request):
-        return web.Response(text="OK")
+        return web.Response(text="OK", status=200)
+    
+    # Добавлены ответы для UptimeRobot на любые типы запросов
     app.router.add_get('/', handle)
+    app.router.add_head('/', handle)
     app.router.add_get('/health', handle)
+    
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', int(os.environ.get('PORT', 8080)))
+    # Изменен порт по умолчанию на 10000, как требует Render
+    port = int(os.environ.get('PORT', 10000))
+    site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
+    
     while True:
         await asyncio.sleep(3600)
 
@@ -590,3 +597,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
