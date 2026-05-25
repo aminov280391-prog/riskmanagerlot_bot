@@ -4,11 +4,16 @@ import logging
 import random
 import string
 from datetime import datetime
-from aiogram import Bot, Dispatcher, types, F
+from typing import Any, Awaitable, Callable, Dict
+
+from aiogram import Bot, Dispatcher, types, F, BaseMiddleware
+from aiogram.exceptions import TelegramForbiddenError
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
+
+import database as db
 
 # ========== КОНФИГУРАЦИЯ ==========
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -226,6 +231,31 @@ user_langs = {}
 user_history = {}
 user_last_params = {}
 reply_codes = {}
+class UserTrackingMiddleware(BaseMiddleware):
+    async def __call__(
+        self,
+        handler: Callable[[types.Message, Dict[str, Any]], Awaitable[Any]],
+        event: types.Message,
+        data: Dict[str, Any]
+    ) -> Any:
+        if isinstance(event, types.Message) and event.from_user:
+            user_id = event.from_user.id
+
+            try:
+                saved_bot_language = await db.upsert_user(event.from_user)
+
+                if saved_bot_language:
+                    user_langs[user_id] = saved_bot_language
+                elif event.from_user.language_code in LANGUAGES:
+                    user_langs[user_id] = event.from_user.language_code
+
+                content_type = str(event.content_type)
+                await db.log_activity(user_id, "message_received", content_type)
+
+            except Exception as e:
+                logging.error(f"User tracking error: {e}")
+
+        return await handler(event, data)
 
 def generate_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
@@ -252,6 +282,8 @@ class ContactForm(StatesGroup):
 # ========== ИНИЦИАЛИЗАЦИЯ ==========
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
+dp.message.middleware(UserTrackingMiddleware())
+
 logging.basicConfig(level=logging.INFO)
 
 def get_lang(user_id):
@@ -326,9 +358,14 @@ async def cmd_language(message: types.Message):
 @dp.message(lambda msg: msg.text in LANGUAGES.values())
 async def set_language(message: types.Message):
     u = message.from_user.id
+
     for code, name in LANGUAGES.items():
         if name == message.text:
             user_langs[u] = code
+
+            await db.update_user_language(u, code)
+            await db.log_activity(u, "language_change", code)
+
             await message.answer(get_text(u, "language_selected"), reply_markup=main_keyboard(u))
             return
 
@@ -408,6 +445,152 @@ async def contact_admin_send(message: types.Message, state: FSMContext):
     await state.clear()
 
 # ========== КОМАНДЫ АДМИНА ==========
+@dp.message(Command("admin_stats"))
+async def admin_stats(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    stats = await db.get_user_stats()
+    totals = stats["totals"]
+    calculations = stats["calculations"]
+    languages = stats["languages"]
+
+    lang_text = ""
+    for item in languages:
+        lang_text += f"- {item['lang']}: {item['count']}\n"
+
+    text = (
+        "📊 Статистика бота\n\n"
+        f"👥 Всего пользователей: {totals.get('total_users') or 0}\n"
+        f"🟢 Активны сегодня: {totals.get('active_today') or 0}\n"
+        f"🚫 Заблокировали бота: {totals.get('blocked_users') or 0}\n"
+        f"💬 Всего сообщений: {totals.get('total_messages') or 0}\n"
+        f"🧮 Всего расчётов: {calculations.get('total_calculations') or 0}\n\n"
+        "🌐 Языки:\n"
+        f"{lang_text if lang_text else '- пока нет данных'}"
+    )
+
+    await message.answer(text)
+
+
+@dp.message(Command("admin_users"))
+async def admin_users(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    users = await db.get_users(limit=30)
+
+    if not users:
+        await message.answer("Пользователей пока нет.")
+        return
+
+    text = "👥 Последние пользователи:\n\n"
+
+    for i, user in enumerate(users, start=1):
+        username = f"@{user['username']}" if user["username"] else "без username"
+        full_name = " ".join(
+            part for part in [user["first_name"], user["last_name"]]
+            if part
+        ) or "без имени"
+
+        blocked = "🚫" if user["is_blocked"] else "✅"
+
+        text += (
+            f"{i}. {blocked} {full_name}\n"
+            f"ID: {user['user_id']}\n"
+            f"Username: {username}\n"
+            f"Язык: {user['lang']}\n"
+            f"Сообщений: {user['messages_count']}\n"
+            f"Первый вход: {user['first_seen']}\n"
+            f"Последний вход: {user['last_seen']}\n\n"
+        )
+
+    await message.answer(text)
+
+
+@dp.message(Command("admin_logs"))
+async def admin_logs(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    parts = message.text.split(maxsplit=1)
+
+    if len(parts) < 2:
+        await message.answer("Использование: /admin_logs USER_ID")
+        return
+
+    try:
+        user_id = int(parts[1].strip())
+    except ValueError:
+        await message.answer("USER_ID должен быть числом.")
+        return
+
+    logs = await db.get_user_logs(user_id=user_id, limit=20)
+
+    if not logs:
+        await message.answer("Логов по этому пользователю пока нет.")
+        return
+
+    text = f"📜 Последние действия пользователя {user_id}:\n\n"
+
+    for log in logs:
+        details = f" | {log['details']}" if log["details"] else ""
+        text += f"{log['created_at']} — {log['action']}{details}\n"
+
+    await message.answer(text)
+
+
+@dp.message(Command("broadcast"))
+async def admin_broadcast(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    parts = message.text.split(maxsplit=1)
+
+    if len(parts) < 2 or not parts[1].strip():
+        await message.answer(
+            "Использование:\n"
+            "/broadcast Текст рассылки\n\n"
+            "Пример:\n"
+            "/broadcast Привет! В боте появилась новая функция."
+        )
+        return
+
+    broadcast_text = parts[1].strip()
+    users = await db.get_all_active_users()
+
+    if not users:
+        await message.answer("Нет активных пользователей для рассылки.")
+        return
+
+    sent = 0
+    blocked = 0
+    errors = 0
+
+    await message.answer(f"📨 Начинаю рассылку для {len(users)} пользователей...")
+
+    for user_id in users:
+        try:
+            await bot.send_message(user_id, broadcast_text)
+            sent += 1
+
+            # Небольшая пауза, чтобы не отправлять слишком резко
+            await asyncio.sleep(0.05)
+
+        except TelegramForbiddenError:
+            blocked += 1
+            await db.mark_user_blocked(user_id)
+
+        except Exception as e:
+            errors += 1
+            logging.error(f"Broadcast error for user {user_id}: {e}")
+
+    await message.answer(
+        "✅ Рассылка завершена.\n\n"
+        f"📨 Отправлено: {sent}\n"
+        f"🚫 Заблокировали бота: {blocked}\n"
+        f"⚠️ Ошибок: {errors}"
+    )
 @dp.message(Command("list_codes"))
 async def list_codes(message: types.Message):
     if message.from_user.id != ADMIN_ID:
@@ -551,6 +734,23 @@ async def process_risk_value(message: types.Message, state: FSMContext):
                 "lot": result["lot"],
                 "risk_text": result["risk_text"]
             })
+            await db.save_calculation(
+    user_id=u,
+    instrument=data["instrument"],
+    deposit=data["deposit"],
+    open_price=data["open_price"],
+    sl_price=data["sl_price"],
+    risk_type=data["risk_type"],
+    risk_value=risk_val,
+    lot=result["lot"],
+    risk_text=result["risk_text"]
+)
+
+await db.log_activity(
+    u,
+    "calculation_done",
+    f'{data["instrument"]}, lot={result["lot"]}, risk={result["risk_text"]}'
+)
         await state.clear()
     except Exception:
         await message.answer(get_text(u, "error_positive"), reply_markup=main_keyboard(u))
@@ -589,7 +789,9 @@ async def set_bot_commands():
     await bot.set_my_commands(commands)
 
 async def main():
+    await db.init_db()
     await set_bot_commands()
+
     await asyncio.gather(
         dp.start_polling(bot),
         health_check()
